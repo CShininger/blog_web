@@ -1,15 +1,21 @@
 import fs from 'fs'
 import path from 'path'
 
-// 定义正则表达式匹配所有汉字
-const regex = /[\u4e00-\u9fa5]+/g
+const regex = /[\u4e00-\u9fa5]+/ // 定义正则表达式匹配所有汉字
 
-// 匹配 JavaScript 单行和多行注释的正则
-const commentRegex = /\/\/.*|\/\*[^]*?\*\//g
+const intlRegex = /intl\s*\([^)]*\)/g // 直接匹配 `intl(...)` 并删除
 
-// 需要排除的文件夹和文件（可以根据需要修改）
-const excludeDirs = ['node_modules', '.git'] // 排除的文件夹
-const excludeFiles = ['example.js', 'test.js'] // 排除的文件
+// 判断是否是注释行
+function isCommentLine(line) {
+  const trimmedLine = line.trim()
+  return (
+    trimmedLine.startsWith('//') || trimmedLine.startsWith('/*') || trimmedLine.startsWith('<!--')
+  )
+}
+
+const excludeDirs = ['assets', 'locales', 'router', 'stores', 'views'] // 需要排除的文件夹
+
+const excludeFiles = ['main.ts'] // 需要排除的文件
 
 const directoryPath = 'src' // 假设脚本和 src 在同一项目目录下
 
@@ -20,9 +26,8 @@ function checkFiles(dir) {
   fs.readdirSync(dir).forEach((file) => {
     const filePath = path.join(dir, file)
 
-    // 检查是否是排除的文件夹或文件
+    // 检查是否是排除的文件夹或文件,是则删除
     if (excludeDirs.includes(file) || excludeFiles.includes(file)) {
-      console.log(`跳过文件或文件夹：${filePath}`)
       return
     }
 
@@ -30,44 +35,31 @@ function checkFiles(dir) {
     if (fs.lstatSync(filePath).isDirectory()) {
       checkFiles(filePath)
     } else {
-      // 检查文件扩展名，如果不在允许的扩展名列表中，跳过
+      // 检查文件扩展名
       const extname = path.extname(filePath)
       if (!allowedExtensions.includes(extname)) {
         return
       }
 
-      // 只处理 .js, .jsx, .ts, .tsx, .vue 文件
+      // 读取文件内容
       let content = fs.readFileSync(filePath, 'utf-8')
 
-      // 移除注释内容
-      const cleanedContent = content.replace(commentRegex, '')
+      // 将每行按行拆分
+      const lines = content.split('\n')
 
-      const matches = cleanedContent.match(regex) // 匹配所有汉字
+      // 过滤掉注释行
+      let cleanedContent = lines.filter((line) => !isCommentLine(line)).join('\n')
 
-      if (matches) {
-        matches.forEach((match) => {
-          //   console.log(match, isDefaultUsage(content, match), 100)
+      // 先移除所有 `intl({ id: 'xxx', def: 'xxx' })` 结构
+      cleanedContent = cleanedContent.replace(intlRegex, '')
 
-          // 检查当前汉字是否在 default: [汉字] 结构中
-          if (!isDefaultUsage(content, match)) {
-            console.log(`未使用 default 方法的中文字符串：${match} 在文件 ${filePath}`)
-          } else {
-            // 已经找到的，通过replace，删除掉，防止下次重复匹配
-            const defaultMatch = new RegExp(`default\\s*:\\s*${match}`)
-            content = content.replace(defaultMatch, 'isUse')
-          }
-        })
+      // 只要文件**还包含**汉字，直接打印文件名并跳过
+      if (cleanedContent.search(regex) !== -1) {
+        console.log(`文件 ${filePath} 中包含未包裹 intl 的汉字`)
+        return // 直接跳过，不打印具体汉字
       }
     }
   })
-}
-
-// 检查当前汉字是否符合 default: 汉字 结构
-function isDefaultUsage(content, match) {
-  // 动态生成匹配 default: <汉字> 结构
-  const defaultMatch = new RegExp(`default\\s*:\\s*${match}`, 'g')
-  // 如果匹配到 default: <汉字>，则返回 true，不打印
-  return defaultMatch.test(content)
 }
 
 // 开始检查
